@@ -1,0 +1,97 @@
+---
+- name: Configure web servers
+  hosts: web_servers
+  become: true
+  vars:
+    server_hostname: "foo"
+    users_to_create:
+      - foo
+      - bar
+  
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Create users
+      user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+      loop: "{{ users_to_create }}"
+
+    - name: Install Apache
+      apt:
+        name: apache2
+        state: present
+
+    - name: Start and enable Apache
+      systemd:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Create a simple index.html
+      copy:
+        content: |
+          <html>
+          <head>
+              <title>Server {{ server_hostname }}</title>
+          </head>
+          <body>
+              <h1>Welcome to {{ server_hostname }} server</h1>
+              <p>This server is managed by Ansible</p>
+              <p>Hostname: {{ ansible_hostname }}</p>
+              <p>IP Address: {{ ansible_default_ipv4.address }}</p>
+              <p>Users created: {{ users_to_create | join(', ') }}</p>
+          </body>
+          </html>
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Set hostname
+      hostname:
+        name: "{{ server_hostname }}"
+
+    - name: Update /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 {{ server_hostname }}"
+        state: present
+
+    - name: Restart Apache to apply changes
+      systemd:
+        name: apache2
+        state: restarted
+
+- name: Configure internal servers
+  hosts: internal_servers
+  become: true
+  vars:
+    server_hostname: "bar"
+    users_to_create:
+      - foo
+      - bar
+  
+  tasks:
+    - name: Create users
+      user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+      loop: "{{ users_to_create }}"
+
+    - name: Set hostname
+      hostname:
+        name: "{{ server_hostname }}"
+
+    - name: Update /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 {{ server_hostname }}"
+        state: present

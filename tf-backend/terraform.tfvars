@@ -1,0 +1,5 @@
+aws_profile          = "cloudlabs"
+aws_region          = "us-east-1"
+bucket_name         = "tf-ansible-cloudlabs"
+dynamodb_table_name = "tf-ansible-cloudlabs-state-lock"
+environment         = "dev"
