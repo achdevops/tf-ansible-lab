@@ -73,3 +73,20 @@ resource "aws_eip" "foo" {
     Name = "${var.name_prefix}-foo-eip"
   })
 }
+
+# Data source to get the existing hosted zone
+data "aws_route53_zone" "main" {
+  name         = "securityoncloud.com"
+  private_zone = false
+}
+
+# Route 53 A record pointing to the Elastic IP
+resource "aws_route53_record" "webserver" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "webserver.securityoncloud.com"
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.foo.public_ip]
+
+  depends_on = [aws_eip.foo]
+}
