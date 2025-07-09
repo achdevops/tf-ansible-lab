@@ -15,6 +15,8 @@ Antes de ejecutar este código, asegúrate de tener configurado:
    - Terraform >= 1.12
    - Ansible >= 2.18
    - AWS CLI configurado
+4. **SSH Key**: Debes tener una clave SSH configurada para acceder a las instancias EC2
+5. **Configuración del Backend de Terraform**: Asegúrate de tener configurado un backend remoto para almacenar el estado de Terraform (S3, DynamoDB, etc.)
 
 ## 🏗️ Estructura del Proyecto
 
