@@ -4,6 +4,8 @@
   become: true
   vars:
     server_hostname: "foo"
+    domain_name: "webserver.securityoncloud.com"
+    email: "admin@securityoncloud.com"  # Change to your email
     users_to_create:
       - foo
       - bar
@@ -22,9 +24,12 @@
         state: present
       loop: "{{ users_to_create }}"
 
-    - name: Install Apache
+    - name: Install required packages
       apt:
-        name: apache2
+        name:
+          - apache2
+          - snapd
+          - python3-certbot-apache
         state: present
 
     - name: Start and enable Apache
@@ -33,25 +38,117 @@
         state: started
         enabled: yes
 
-    - name: Create a simple index.html
+    - name: Create Apache virtual host for domain
+      copy:
+        content: |
+          <VirtualHost *:80>
+              ServerName {{ domain_name }}
+              DocumentRoot /var/www/{{ domain_name }}
+              
+              <Directory /var/www/{{ domain_name }}>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+              
+              ErrorLog ${APACHE_LOG_DIR}/{{ domain_name }}_error.log
+              CustomLog ${APACHE_LOG_DIR}/{{ domain_name }}_access.log combined
+          </VirtualHost>
+        dest: /etc/apache2/sites-available/{{ domain_name }}.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create document root directory
+      file:
+        path: /var/www/{{ domain_name }}
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Create index.html for domain
       copy:
         content: |
           <html>
           <head>
-              <title>Server {{ server_hostname }}</title>
+              <title>{{ domain_name }}</title>
           </head>
           <body>
-              <h1>Welcome to {{ server_hostname }} server</h1>
-              <p>This server is managed by Ansible</p>
+              <h1>Welcome to {{ domain_name }}</h1>
+              <p>This server is managed by Ansible with SSL enabled</p>
               <p>Hostname: {{ ansible_hostname }}</p>
               <p>IP Address: {{ ansible_default_ipv4.address }}</p>
               <p>Users created: {{ users_to_create | join(', ') }}</p>
           </body>
           </html>
-        dest: /var/www/html/index.html
-        owner: root
-        group: root
+        dest: /var/www/{{ domain_name }}/index.html
+        owner: www-data
+        group: www-data
         mode: '0644'
+
+    - name: Enable the new site
+      command: a2ensite {{ domain_name }}.conf
+      notify: restart apache
+
+    - name: Disable default Apache site
+      command: a2dissite 000-default.conf
+      notify: restart apache
+
+    - name: Enable Apache SSL module
+      apache2_module:
+        name: ssl
+        state: present
+      notify: restart apache
+
+    - name: Enable Apache rewrite module
+      apache2_module:
+        name: rewrite
+        state: present
+      notify: restart apache
+
+    - name: Restart Apache to apply configuration
+      systemd:
+        name: apache2
+        state: restarted
+
+    - name: Install Certbot
+      snap:
+        name: certbot
+        classic: yes
+
+    - name: Remove existing certbot file if it exists
+      file:
+        path: /usr/bin/certbot
+        state: absent
+
+    - name: Create symbolic link for certbot
+      file:
+        src: /snap/bin/certbot
+        dest: /usr/bin/certbot
+        state: link
+
+    - name: Obtain SSL certificate with Certbot
+      command: >
+        certbot --apache 
+        --non-interactive 
+        --agree-tos 
+        --email {{ email }} 
+        --domains {{ domain_name }}
+        --redirect
+      register: certbot_result
+      failed_when: 
+        - certbot_result.rc != 0
+        - "'Certificate not yet due for renewal' not in certbot_result.stdout"
+
+    - name: Set up automatic certificate renewal
+      cron:
+        name: "Certbot automatic renewal"
+        job: "/usr/bin/certbot renew --quiet"
+        minute: "0"
+        hour: "12"
+        day: "*"
+        month: "*"
+        weekday: "*"
 
     - name: Set hostname
       hostname:
@@ -63,10 +160,12 @@
         line: "127.0.0.1 {{ server_hostname }}"
         state: present
 
-    - name: Restart Apache to apply changes
+  handlers:
+    - name: restart apache
       systemd:
         name: apache2
         state: restarted
+
 
 - name: Configure internal servers
   hosts: internal_servers
